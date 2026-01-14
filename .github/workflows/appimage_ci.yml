@@ -1,0 +1,121 @@
+name: Build AppImage
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]         
+
+jobs:
+
+  build-ubuntu-x64:
+    name: Build AppImage ${{ matrix.Configuration }} ${{ matrix.Platform }}
+    runs-on: ubuntu-22.04 # ubuntu-22.04 after 2025-04-01. The Ubuntu 20.04 Actions runner will be fully unsupported by 2025-04-01
+    strategy:
+      fail-fast: false
+      matrix:
+        Configuration: [Release]
+        Platform: [x64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
+        env: # Or as an environment variable
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
+
+      - name: List keys5
+        run: gpg -K
+
+      - uses: actions/checkout@v4
+
+      - name: Install packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y libogg-dev libvorbis-dev libmpg123-dev &&
+          sudo apt-get install -qq -y zlib1g-dev libglew-dev libmpg123-dev libmpg123-0 libcurl4-nss-dev
+          sudo apt-get -y install $(apt-cache depends libsdl2-dev | grep Depends | sed "s/.*ends:\ //" | tr '\n' ' ')
+          sudo apt-get -y install $(apt-cache depends libsdl2-2.0-0 | grep Depends | sed "s/.*ends:\ //" | tr '\n' ' ')
+          sudo dpkg -r --force-depends libsdl2-2.0-0
+          echo Remove the echo after 2025-04-01. The Ubuntu 20.04 Actions runner will be fully unsupported by 2025-04-01
+          echo sudo add-apt-repository universe
+          echo sudo apt install libfuse2
+          
+      - name: Get current date
+        id: date
+        uses: Kaven-Universe/github-action-current-date-time@v1
+        with:
+           format: "YYYYMMDD"
+
+      - name: Show current date
+        run: |
+          echo "${{ steps.date.outputs.time }}"
+
+      - name: Get linuxdeploy AppImage
+        run: |
+            wget -nv -c https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+            chmod +x linuxdeploy-x86_64.AppImage
+
+      - name: Build and install SDL2
+        run: |
+            wget -nv -c https://www.libsdl.org/release/SDL2-2.28.5.tar.gz
+            tar xzpf SDL2-2.28.5.tar.gz
+            cd SDL2-2.28.5
+            mkdir build && cd build 
+            ../configure
+            make -j4
+            sudo make install
+
+      - name: Build and install SDL_Image
+        run: |
+            cd ${{github.workspace}}
+            wget -nv -c https://www.libsdl.org/projects/SDL_image/release/SDL2_image-2.8.2.tar.gz
+            tar xzpf SDL2_image-2.8.2.tar.gz
+            cd SDL2_image-2.8.2
+            mkdir build && cd build 
+            ../configure
+            make -j4
+            sudo make install
+
+      - name: Prepare sources
+        run: |
+            cd ${{github.workspace}}
+            echo add appimage sources
+            cp -axv Linux/AppImage/Sources/appimage.* Quake
+            echo apply appimage patch and compile
+            patch --verbose -p1 < Linux/AppImage/patches/0001-ironwail-AppImage.patch
+
+      - name: Build sources
+        run: |
+            cd ${{github.workspace}}
+            echo if use cmake # remove echo
+            echo mkdir build && echo cd build
+            echo cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr -DCMAKE_BUILD_TYPE=Release ..
+            cd Quake
+            make -j4
+
+      - name: Copy compiling binaries 
+        run: |
+            cd ${{github.workspace}}
+            echo if use cmake # remove echo
+            echo cp -axv build/ironwail Linux/AppImage/AppDir/usr/bin
+            cp -axv Quake/ironwail Linux/AppImage/AppDir/usr/bin
+            cp -axv Quake/ironwail.pak Linux/AppImage/AppDir/usr/bin
+            cp -axv Linux/AppImage/Img/ironwail.jpg Linux/AppImage/AppDir/usr/bin
+
+      - name: Build AppImage
+        run: |
+            cd ${{github.workspace}}
+            SIGN=1 ./linuxdeploy-x86_64.AppImage --executable Linux/AppImage/AppDir/usr/bin/ironwail --desktop-file Linux/AppImage/AppDir/usr/share/applications/io.github.andrei-drexler.ironwail.desktop --icon-file Linux/AppImage/AppDir/usr/share/icons/hicolor/128x128/apps/ironwail.png --appdir Linux/AppImage/AppDir --output appimage
+            mv -f ${{github.workspace}}/Ironwail-x86_64.AppImage ironwail-${{ steps.date.outputs.time }}-0.8.0-x86_64.AppImage
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ironwail-${{ steps.date.outputs.time }}-0.8.0-x86_64.AppImage
+          path: ironwail-${{ steps.date.outputs.time }}-0.8.0-x86_64.AppImage
