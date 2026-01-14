@@ -43,8 +43,9 @@ jobs:
           sudo apt-get -y install $(apt-cache depends libsdl2-2.0-0 | grep Depends | sed "s/.*ends:\ //" | tr '\n' ' ')
           sudo dpkg -r --force-depends libsdl2-2.0-0
           echo Remove the echo after 2025-04-01. The Ubuntu 20.04 Actions runner will be fully unsupported by 2025-04-01
-          echo sudo add-apt-repository universe
-          echo sudo apt install libfuse2
+          sudo add-apt-repository universe
+          sudo apt install libfuse2
+          echo https://github.com/AppImage/AppImageKit/wiki/FUSE  
           
       - name: Get current date
         id: date
